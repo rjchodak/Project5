@@ -1,0 +1,91 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Constants and initial parameters
+Thi = 150  # Initial hot stream temperature (°C)
+Tci = 20   # Initial cold stream temperature (°C)
+Wh = 1.0   # Hot stream flow rate (kg/s)
+Cph = 3.2  # Specific heat capacity of hot stream (kJ/kg*K)
+Cpc = 4.1  # Specific heat capacity of cold stream (kJ/kg*K)
+Adesign = 18.48701126498061  # Design exchanger area (m^2)
+tol = 0.001  # Tolerance for bisection method
+
+# Function to calculate outlet temperatures
+def calculate_outlet_temperatures(Wc_ratios):
+    # Constants for heat transfer coefficients (temperature dependent)
+    def Hh(T):
+        return 0.9 * (1 + 0.015 * (T - 25))
+
+    def Hc(T):
+        return 3 * (1 + 0.03 * (T - 25))
+
+    # Function for temperature profiles and area under the curve
+    def calculate_profiles(Wc_ratio):
+        # Function for hot stream temperature
+        def Th(Tho, Tc):
+            return Tho - ((Tc - Tci) * (Cpc * Wc_ratio / (-Cph * Wh)))
+
+        # Function for cold stream outlet temperature
+        def Tco(Tho):
+            return Tci + ((Cph * Wh) / (Cpc * Wc_ratio)) * (Thi - Tho)
+
+        # Function for heat transfer coefficient
+        def H(Tho, Tc):
+            Hhval = Hh(Th(Tho, Tc))
+            Hcval = Hc(Tc)
+            return 1 / ((1 / Hcval) + (1 / Hhval) + (0.002 / 0.05))
+
+        # Function for area under the curve
+        def A(Tho):
+            def f2(Tc):
+                I = (Cpc * Wc_ratio) / H(Tho, Tc)
+                return I / (Th(Tho, Tc) - Tc)
+
+            Tc_vals = np.linspace(20, Tco(Tho), 1000)
+            integral_values = np.array([f2(Tc) for Tc in Tc_vals])
+            area = np.trapz(integral_values, Tc_vals)
+            return area
+
+        # Bisection method to find Tho
+        def bisect(target):
+            a = Tci
+            b = Thi
+            while True:
+                Tho = (a + b) / 2
+                if np.isclose(A(Tho), target, atol=tol):
+                    return Tho
+                elif A(Tho) < target:
+                    b = Tho
+                else:
+                    a = Tho
+
+        # Calculate Tho using bisection
+        Tho = bisect(Adesign)
+
+        # Calculate Tco based on Tho
+        Tco_out = Tco(Tho)
+        return Tho, Tco_out
+
+    # Main program to generate data for plotting
+    Th_values = []
+    Tc_values = []
+    for Wc_ratio in Wc_ratios:
+        Th_out, Tc_out = calculate_profiles(Wc_ratio)
+        Th_values.append(Th_out)
+        Tc_values.append(Tc_out)
+
+    return Th_values, Tc_values
+
+# Main program
+Wc_ratios = np.linspace(0.5, 1.5, 100)  # Wc/Wc_design
+Th_values, Tc_values = calculate_outlet_temperatures(Wc_ratios)
+
+# Plotting the temperature profiles
+plt.plot(Wc_ratios, Th_values, label='Hot Stream (Th)', color='red')
+plt.plot(Wc_ratios, Tc_values, label='Cold Stream (Tc)', color='blue')
+plt.xlabel('Wc/Wc_design')
+plt.ylabel('Temperature (°C)')
+plt.title('Outlet Temperatures vs. Wc/Wc_design')
+plt.legend()
+plt.grid(True)
+plt.show()
